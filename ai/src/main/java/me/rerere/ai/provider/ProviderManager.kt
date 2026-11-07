@@ -3,6 +3,7 @@ package me.rerere.ai.provider
 import android.content.Context
 import me.rerere.ai.provider.providers.chatgpt.ChatGPTProvider
 import me.rerere.ai.provider.providers.claude.ClaudeProvider
+import me.rerere.ai.provider.providers.githubcopilot.GitHubCopilotProvider
 import me.rerere.ai.provider.providers.google.GoogleProvider
 import me.rerere.ai.provider.providers.grok.GrokProvider
 import me.rerere.ai.provider.providers.openai.OpenAIProvider
@@ -26,6 +27,7 @@ class ProviderManager(
         registerProvider("claude", ClaudeProvider(client, context))
         registerProvider("chatgpt", ChatGPTProvider(client, accountCredentials))
         registerProvider("grok", GrokProvider(client, accountCredentials))
+        registerProvider("github_copilot", GitHubCopilotProvider(client, accountCredentials))
     }
 
     /**
@@ -62,6 +64,7 @@ class ProviderManager(
             is ProviderSetting.Claude -> getProvider("claude")
             is ProviderSetting.ChatGPT -> getProvider("chatgpt")
             is ProviderSetting.Grok -> getProvider("grok")
+            is ProviderSetting.GitHubCopilot -> getProvider("github_copilot")
         } as Provider<T>
     }
 }

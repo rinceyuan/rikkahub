@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.Callback
@@ -266,13 +267,22 @@ class OAuthHttpClient(
             val (code, body) = withContext(Dispatchers.IO) {
                 executeRaw(httpRequest).use { it.code to it.body.string() }
             }
-            if (code in 200..299) return json.decodeFromString(TokenResponse.serializer(), body)
-            val error = runCatching {
-                json.parseToJsonElement(body).jsonObject["error"]?.jsonPrimitive?.contentOrNull
-            }.getOrNull()
+            val payload = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull()
+            // GitHub 等厂商的设备码轮询在等待授权或限流时也返回 HTTP 200，需先看 error 字段
+            val error = payload?.get("error")?.jsonPrimitive?.contentOrNull
+            if (code in 200..299 && error == null) {
+                return json.decodeFromString(TokenResponse.serializer(), body)
+            }
             when (error) {
                 "authorization_pending" -> {}
-                "slow_down" -> interval += 5
+                "slow_down" -> {
+                    val serverInterval = payload["interval"]?.jsonPrimitive?.longOrNull
+                    interval = if (serverInterval != null && serverInterval > interval) {
+                        serverInterval.coerceAtMost(60)
+                    } else {
+                        interval + 5
+                    }
+                }
                 "access_denied" -> throw DeviceAuthorizationException(error, "Authorization was denied")
                 "expired_token" -> throw DeviceAuthorizationException(error, "Device code expired")
                 else -> throw DeviceAuthorizationException(

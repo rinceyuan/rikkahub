@@ -7,7 +7,7 @@
   <string name="about_page_version">版本</string>
   <string name="about_page_website">官网</string>
   <string name="add">添加</string>
-  <string name="app_name">RikkaHub</string>
+  <string name="app_name">Rikka</string>
   <string name="asr_button_content_description">语音识别</string>
   <string name="asr_button_stop">停止</string>
   <string name="assistant_detail_basic_desc">配置名称、头像、模型和参数</string>
@@ -1671,6 +1671,7 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_provider_page_quota_variables">变量：%1$s。API 密钥将随上述请求头发送到此 URL。</string>
   <string name="setting_provider_page_sign_in_with">使用 %1$s 登录</string>
   <string name="setting_provider_page_grok_disclaimer">以 Grok CLI 的方式登录，使用你的 SuperGrok 订阅。实验性功能：xAI 可能随时更改或限制此功能。</string>
+  <string name="setting_provider_page_github_copilot_disclaimer">以 VS Code Copilot Chat 插件的方式登录，使用你的 GitHub Copilot 订阅。实验性功能：GitHub 可能随时更改或限制此功能。</string>
   <string name="setting_provider_page_device_code_hint">请在浏览器中确认此验证码</string>
   <string name="setting_provider_page_device_code_reopen">点击重新打开页面</string>
   <string name="setting_provider_page_type_subscription">%s 订阅</string>

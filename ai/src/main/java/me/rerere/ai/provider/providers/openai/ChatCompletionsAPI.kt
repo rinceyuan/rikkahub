@@ -74,29 +74,59 @@ import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
 
+internal class ChatCompletionsEndpoint(
+    val url: String,
+    val baseUrl: String = url,
+    val includeHistoryReasoning: Boolean = true,
+    // 构建请求时调用，负责请求头和鉴权；可挂起，以便先刷新 token
+    val configureRequest: suspend Request.Builder.() -> Unit,
+)
+
 class ChatCompletionsAPI(
     private val client: OkHttpClient,
-    private val keyRoulette: KeyRoulette
+    private val keyRoulette: KeyRoulette = KeyRoulette.default()
 ) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
         messages: List<UIMessage>,
         params: TextGenerationParams,
+    ): TextGenerationResult = generateText(providerSetting.toChatCompletionsEndpoint(params), messages, params)
+
+    override suspend fun streamText(
+        providerSetting: ProviderSetting.OpenAI,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+    ): Flow<StreamChunk> = streamText(providerSetting.toChatCompletionsEndpoint(params), messages, params)
+
+    private fun ProviderSetting.OpenAI.toChatCompletionsEndpoint(params: TextGenerationParams) =
+        ChatCompletionsEndpoint(
+            url = "$baseUrl$chatCompletionsPath",
+            baseUrl = baseUrl,
+            includeHistoryReasoning = includeHistoryReasoning,
+            configureRequest = {
+                headers(mergeCustomHeaders(params.customHeaders))
+                addHeader("Authorization", "Bearer ${keyRoulette.next(apiKey, id.toString())}")
+                configureReferHeaders(baseUrl)
+                configureSessionHeaders(baseUrl, params.sessionId)
+            },
+        )
+
+    internal suspend fun generateText(
+        endpoint: ChatCompletionsEndpoint,
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
     ): TextGenerationResult = withContext(Dispatchers.IO) {
-        val requestBody =
-            buildChatCompletionRequest(
-                messages = messages,
-                params = params,
-                providerSetting = providerSetting
-            )
+        val requestBody = buildChatCompletionRequest(
+            messages = messages,
+            params = params,
+            baseUrl = endpoint.baseUrl,
+            includeHistoryReasoning = endpoint.includeHistoryReasoning,
+        )
 
         val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .url(endpoint.url)
+            .apply { endpoint.configureRequest(this) }
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
         Log.i(TAG, "generateText: ${json.encodeToString(requestBody)}")
@@ -130,26 +160,24 @@ class ChatCompletionsAPI(
         )
     }
 
-    override suspend fun streamText(
-        providerSetting: ProviderSetting.OpenAI,
+    internal fun streamText(
+        endpoint: ChatCompletionsEndpoint,
         messages: List<UIMessage>,
         params: TextGenerationParams,
     ): Flow<StreamChunk> = callbackFlow {
         val requestBody = buildChatCompletionRequest(
             messages = messages,
             params = params,
-            providerSetting = providerSetting,
+            baseUrl = endpoint.baseUrl,
+            includeHistoryReasoning = endpoint.includeHistoryReasoning,
             stream = true,
         )
 
         val request = Request.Builder()
-            .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
-            .headers(providerSetting.mergeCustomHeaders(params.customHeaders))
+            .url(endpoint.url)
+            .apply { endpoint.configureRequest(this) }
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
-            .addHeader("Authorization", "Bearer ${keyRoulette.next(providerSetting.apiKey, providerSetting.id.toString())}")
             .addHeader("Content-Type", "application/json")
-            .configureReferHeaders(providerSetting.baseUrl)
-            .configureSessionHeaders(providerSetting.baseUrl, params.sessionId)
             .build()
 
         Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
@@ -227,8 +255,22 @@ class ChatCompletionsAPI(
         params: TextGenerationParams,
         providerSetting: ProviderSetting.OpenAI,
         stream: Boolean = false,
+    ): JsonObject = buildChatCompletionRequest(
+        messages = messages,
+        params = params,
+        baseUrl = providerSetting.baseUrl,
+        includeHistoryReasoning = providerSetting.includeHistoryReasoning,
+        stream = stream,
+    )
+
+    internal fun buildChatCompletionRequest(
+        messages: List<UIMessage>,
+        params: TextGenerationParams,
+        baseUrl: String,
+        includeHistoryReasoning: Boolean = true,
+        stream: Boolean = false,
     ): JsonObject {
-        val host = providerSetting.baseUrl.toHttpUrl().host
+        val host = baseUrl.toHttpUrl().host
         val isOpenRouter = host == "openrouter.ai"
         return buildJsonObject {
             put("model", params.model.modelId)
@@ -236,7 +278,7 @@ class ChatCompletionsAPI(
                 "messages",
                 buildMessages(
                     messages = messages,
-                    includeHistoryReasoning = providerSetting.includeHistoryReasoning,
+                    includeHistoryReasoning = includeHistoryReasoning,
                     includeOpenRouterReasoningDetails = isOpenRouter,
                     supportInputModalities = params.model.inputModalities,
                 )
@@ -719,6 +761,7 @@ class ChatCompletionsAPI(
         val content = jsonObject["content"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitiveOrNull?.contentOrNull
+            ?: jsonObject["reasoning_text"]?.jsonPrimitiveOrNull?.contentOrNull
             ?: jsonObject["content"]?.takeIf { it is JsonArray }?.let { arr ->
                 // Mistral接口
                 // {"id":"","object":"chat.completion.chunk","created":1772351733,"model":"magistral-medium-2509","choices":[{"index":0,"delta":{"content":[{"type":"thinking","thinking":[{"type":"text","text":"好的"}]}]},"finish_reason":null}]}

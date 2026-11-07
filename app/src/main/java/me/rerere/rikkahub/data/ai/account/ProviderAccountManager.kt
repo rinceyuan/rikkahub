@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.data.ai.account
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
@@ -79,6 +81,7 @@ class ProviderAccountManager(
                 val credential = when (provider) {
                     is ProviderSetting.ChatGPT -> loginChatGPT(context.applicationContext)
                     is ProviderSetting.Grok -> loginGrok(providerId, context.applicationContext)
+                    is ProviderSetting.GitHubCopilot -> loginGitHubCopilot(providerId, context.applicationContext)
                 }
                 persistCredential(providerId, credential)
                 setStatus(providerId, null)
@@ -147,6 +150,12 @@ class ProviderAccountManager(
 
                     is ProviderSetting.Grok -> GrokAuth.toCredential(
                         token = oauthClient.refreshToken(GrokAuth.refreshRequest(refreshToken)),
+                        previous = credential,
+                    )
+
+                    is ProviderSetting.GitHubCopilot -> GitHubCopilotAuth.toCredential(
+                        githubOAuthToken = refreshToken,
+                        sessionToken = GitHubCopilotAuth.exchangeCopilotToken(client, refreshToken),
                         previous = credential,
                     )
                 }
@@ -221,6 +230,36 @@ class ProviderAccountManager(
             )
             val credential = GrokAuth.toCredential(token, previous = null)
             if (credential.email != null) credential else credential.copy(email = fetchGrokEmail(credential))
+        }
+
+    private suspend fun loginGitHubCopilot(providerId: Uuid, context: Context): OAuthCredential =
+        withContext(Dispatchers.IO) {
+            val authorization =
+                oauthClient.requestDeviceAuthorization(GitHubCopilotAuth.deviceAuthorizationRequest())
+            val url = authorization.verificationUriComplete ?: authorization.verificationUri
+            require(url.startsWith("https://")) { "Invalid verification URL: $url" }
+            setStatus(providerId, AccountLoginStatus.DeviceCode(authorization.userCode, url))
+            withContext(Dispatchers.Main) {
+                runCatching {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    clipboard?.setPrimaryClip(ClipData.newPlainText("GitHub Device Code", authorization.userCode))
+                }
+                CustomTabsOAuthAuthorizationLauncher.launch(context, url)
+            }
+            val token = oauthClient.awaitDeviceToken(
+                GitHubCopilotAuth.deviceTokenRequest(authorization.deviceCode),
+                authorization,
+            )
+            val sessionToken = GitHubCopilotAuth.exchangeCopilotToken(client, token.accessToken)
+            val userProfile = runCatching {
+                GitHubCopilotAuth.fetchUserProfile(client, token.accessToken)
+            }.onFailure { Log.w(TAG, "Failed to fetch GitHub Copilot user profile", it) }.getOrNull()
+            GitHubCopilotAuth.toCredential(
+                githubOAuthToken = token.accessToken,
+                sessionToken = sessionToken,
+                userProfile = userProfile,
+                previous = null,
+            )
         }
 
     // token 里没有邮箱时查 userinfo，只用于界面展示，查不到不影响登录

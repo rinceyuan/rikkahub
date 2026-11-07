@@ -15,13 +15,15 @@ data class OAuthCredential(
     val expiresAt: Long = 0L,
     // 厂商侧的账号/工作区 ID，ChatGPT 请求需要带上
     val accountId: String? = null,
+    // 账号分配的专用 API 基址（如 GitHub Copilot 的 endpoints.api）
+    val apiBaseUrl: String? = null,
     // 以下仅用于界面展示
     val email: String? = null,
     val plan: String? = null,
 ) {
     override fun toString(): String =
         "OAuthCredential(accessToken=${accessToken.masked()}, refreshToken=${refreshToken?.masked()}, " +
-            "expiresAt=$expiresAt, accountId=$accountId, email=$email, plan=$plan)"
+            "expiresAt=$expiresAt, accountId=$accountId, apiBaseUrl=$apiBaseUrl, email=$email, plan=$plan)"
 
     private fun String.masked(): String = if (length <= 8) "***" else "${take(4)}***${takeLast(4)}"
 }
@@ -45,7 +47,9 @@ val ProviderSetting.supportsBuiltInSearch: Boolean
         is ProviderSetting.OpenAI -> useResponseApi
         is ProviderSetting.Google -> true
         is ProviderSetting.Claude -> true
-        is ProviderSetting.Account -> true
+        is ProviderSetting.ChatGPT -> true
+        is ProviderSetting.Grok -> true
+        is ProviderSetting.GitHubCopilot -> false
     }
 
 @Serializable
@@ -289,6 +293,44 @@ sealed class ProviderSetting {
         override val id: Uuid = Uuid.random(),
         override val enabled: Boolean = true,
         override val name: String = "Grok",
+        override val models: List<Model> = emptyList(),
+        override val customHeaders: List<CustomHeader> = emptyList(),
+        @Transient override val builtIn: Boolean = false,
+        @Transient override val description: @Composable (() -> Unit) = {},
+        @Transient override val shortDescription: @Composable (() -> Unit) = {},
+        override val credential: OAuthCredential? = null,
+    ) : Account() {
+        override fun withCredential(credential: OAuthCredential?): Account = copy(credential = credential)
+
+        override fun copyProvider(
+            id: Uuid,
+            enabled: Boolean,
+            name: String,
+            models: List<Model>,
+            customHeaders: List<CustomHeader>,
+            builtIn: Boolean,
+            description: @Composable (() -> Unit),
+            shortDescription: @Composable (() -> Unit),
+        ): ProviderSetting {
+            return this.copy(
+                id = id,
+                enabled = enabled,
+                name = name,
+                models = models,
+                customHeaders = customHeaders,
+                builtIn = builtIn,
+                description = description,
+                shortDescription = shortDescription,
+            )
+        }
+    }
+
+    @Serializable
+    @SerialName("github_copilot")
+    data class GitHubCopilot(
+        override val id: Uuid = Uuid.random(),
+        override val enabled: Boolean = true,
+        override val name: String = "GitHub Copilot",
         override val models: List<Model> = emptyList(),
         override val customHeaders: List<CustomHeader> = emptyList(),
         @Transient override val builtIn: Boolean = false,

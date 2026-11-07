@@ -176,6 +176,24 @@ class OAuthHttpClientTest {
     }
 
     @Test
+    fun `device token handles github style 200 error payloads and server slow down interval`() = runTest {
+        val requests = mutableListOf<Request>()
+        val client = deviceTokenClient(
+            200 to """{"error":"authorization_pending","error_description":"The authorization request is still pending."}""",
+            200 to """{"error":"slow_down","interval":12}""",
+            200 to """{"access_token":"ghu_token","token_type":"bearer","scope":"read:user"}""",
+            requests = requests,
+        )
+
+        val token = client.awaitDeviceToken(deviceTokenRequest, authorization)
+
+        assertEquals("ghu_token", token.accessToken)
+        assertEquals(3, requests.size)
+        // 5 + 5 + 12：slow_down 带 interval 时采用服务端给出的新间隔
+        assertEquals(22_000L, currentTime)
+    }
+
+    @Test
     fun `device token reports denial`() = runTest {
         val client = deviceTokenClient(400 to """{"error":"access_denied"}""", requests = mutableListOf())
 

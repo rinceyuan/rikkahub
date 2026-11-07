@@ -130,6 +130,14 @@ fun ProviderConfigure(
                 plan = null,
                 disclaimer = stringResource(R.string.setting_provider_page_grok_disclaimer),
             )
+
+            is ProviderSetting.GitHubCopilot -> ProviderConfigureAccount(
+                provider = provider,
+                onEdit = onEdit,
+                serviceName = "GitHub",
+                plan = provider.credential?.plan,
+                disclaimer = stringResource(R.string.setting_provider_page_github_copilot_disclaimer),
+            )
         }
     }
 }
